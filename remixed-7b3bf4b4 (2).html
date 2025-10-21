@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FreeBody Diagram Builder</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-weight: bold;
+            font-size: 14px;
+            color: #555;
+        }
+        select, button, input {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button.secondary {
+            background: #2196F3;
+        }
+        button.secondary:hover {
+            background: #0b7dda;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        button.danger:hover {
+            background: #da190b;
+        }
+        #canvas {
+            border: 2px solid #333;
+            cursor: crosshair;
+            display: block;
+            background: white;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+        .instructions {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .force-list {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .force-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        .force-item select {
+            flex: 1;
+            max-width: 150px;
+        }
+        .color-indicator {
+            width: 30px;
+            height: 20px;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+        }
+        input[type="color"] {
+            border: none;
+            width: 40px;
+            height: 30px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FreeBody Diagram Builder</h1>
+        
+        <div class="instructions">
+            <strong>Instructions:</strong> 
+            1. Select a scenario 
+            2. Click and drag on the canvas to draw force vectors 
+            3. Label each force and optionally show components 
+            4. Right-click and save your diagram as a PNG
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="scenario">Scenario:</label>
+                <select id="scenario">
+                    <option value="blank">Blank Page</option>
+                    <option value="person">Person Standing</option>
+                    <option value="spring">Block on Spring</option>
+                    <option value="verticalSpring">Block on Vertical Spring</option>
+                    <option value="table">Box on Table</option>
+                    <option value="incline">Box on Inclined Plane</option>
+                    <option value="air">Ball in Air</option>
+                    <option value="hanging">Box Hanging from Rope</option>
+                    <option value="twoRopes">Box Held by Two Ropes</option>
+                    <option value="atwood">Atwood Machine</option>
+                    <option value="modifiedAtwood">Modified Atwood Machine</option>
+                    <option value="modifiedAtwoodIncline">Modified Atwood (Incline)</option>
+                </select>
+            </div>
+
+            <button onclick="clearCanvas()" class="danger">Clear All Forces</button>
+        </div>
+
+        <canvas id="canvas" width="800" height="600"></canvas>
+
+        <div class="force-list" id="forceList"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const scenarioSelect = document.getElementById('scenario');
+        
+        let forces = [];
+        let isDrawing = false;
+        let currentForce = null;
+        let objectCenter = { x: 400, y: 300 };
+        let isDragging = false;
+        let draggedForce = null;
+        let dragPoint = null; // 'start' or 'end'
+
+        const forceLabels = ['Fn', 'Fg', 'Fa', 'T1', 'T2', 'Fapplied', 'Fparallel', 'Fperpendicular', 'Fairdrag', 'Ff'];
+        const colors = ['#FF0000', '#0000FF', '#00AA00', '#FF00FF', '#FF8800', '#8800FF', '#00FFFF', '#888888', '#AA0000'];
+
+        function drawGrid() {
+            const gridSize = 20;
+            ctx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+            ctx.lineWidth = 1;
+            
+            // Vertical lines
+            for (let x = 0; x <= canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Horizontal lines
+            for (let y = 0; y <= canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawScenario(scenario) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw grid
+            drawGrid();
+            
+            ctx.strokeStyle = '#000';
+            ctx.fillStyle = '#8B4513';
+            ctx.lineWidth = 2;
+
+            switch(scenario) {
+                case 'blank':
+                    // Just the grid, no objects
+                    objectCenter = { x: 400, y: 300 };
+                    break;
+                
+                case 'person':
+                    // Ground
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(0, 450, canvas.width, 20);
+                    ctx.strokeRect(0, 450, canvas.width, 20);
+                    
+                    // Person as stick figure
+                    ctx.strokeStyle = '#000';
+                    ctx.fillStyle = '#FFD4A3';
+                    ctx.lineWidth = 3;
+                    
+                    // Head
+                    ctx.beginPath();
+                    ctx.arc(400, 320, 25, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FFD4A3';
+                    ctx.fill();
+                    ctx.strokeStyle = '#000';
+                    ctx.stroke();
+                    
+                    // Body
+                    ctx.beginPath();
+                    ctx.moveTo(400, 345);
+                    ctx.lineTo(400, 410);
+                    ctx.stroke();
+                    
+                    // Arms
+                    ctx.beginPath();
+                    ctx.moveTo(400, 360);
+                    ctx.lineTo(370, 380);
+                    ctx.moveTo(400, 360);
+                    ctx.lineTo(430, 380);
+                    ctx.stroke();
+                    
+                    // Legs
+                    ctx.beginPath();
+                    ctx.moveTo(400, 410);
+                    ctx.lineTo(380, 450);
+                    ctx.moveTo(400, 410);
+                    ctx.lineTo(420, 450);
+                    ctx.stroke();
+                    
+                    // Center of mass dot (approximately at center of torso)
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(400, 375, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    objectCenter = { x: 400, y: 375 };
+                    break;
+                
+                case 'spring':
+                    // Horizontal surface/table
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(100, 350, 600, 20);
+                    ctx.strokeRect(100, 350, 600, 20);
+                    
+                    // Wall on the left
+                    ctx.fillStyle = '#999';
+                    ctx.fillRect(100, 250, 20, 100);
+                    ctx.strokeRect(100, 250, 20, 100);
+                    
+                    // Draw spring (zigzag pattern)
+                    ctx.strokeStyle = '#666';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    const springStart = 120;
+                    const springEnd = 300;
+                    const springY = 300;
+                    const coils = 8;
+                    const amplitude = 15;
+                    
+                    ctx.moveTo(springStart, springY);
+                    for (let i = 0; i <= coils; i++) {
+                        const x = springStart + (springEnd - springStart) * (i / coils);
+                        const y = springY + (i % 2 === 0 ? amplitude : -amplitude);
+                        ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                    
+                    // Box attached to spring
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(300, 250, 100, 100);
+                    ctx.strokeRect(300, 250, 100, 100);
+                    
+                    // Center of mass dot
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(350, 300, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    objectCenter = { x: 350, y: 300 };
+                    break;
+                
+                case 'verticalSpring':
+                    // Ceiling
+                    ctx.fillStyle = '#999';
+                    ctx.fillRect(0, 80, canvas.width, 20);
+                    ctx.strokeRect(0, 80, canvas.width, 20);
+                    
+                    // Draw vertical spring (zigzag pattern)
+                    ctx.strokeStyle = '#666';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    const vSpringTop = 100;
+                    const vSpringBottom = 280;
+                    const vSpringX = 400;
+                    const vCoils = 10;
+                    const vAmplitude = 15;
+                    
+                    ctx.moveTo(vSpringX, vSpringTop);
+                    for (let i = 0; i <= vCoils; i++) {
+                        const y = vSpringTop + (vSpringBottom - vSpringTop) * (i / vCoils);
+                        const x = vSpringX + (i % 2 === 0 ? vAmplitude : -vAmplitude);
+                        ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                    
+                    // Box hanging from spring
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(350, 280, 100, 100);
+                    ctx.strokeRect(350, 280, 100, 100);
+                    
+                    // Center of mass dot
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(400, 330, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    objectCenter = { x: 400, y: 330 };
+                    break;
+                
+                case 'table':
+                    // Box
+                    ctx.fillRect(350, 250, 100, 100);
+                    ctx.strokeRect(350, 250, 100, 100);
+                    // Table
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(250, 350, 300, 20);
+                    ctx.strokeRect(250, 350, 300, 20);
+                    // Center of mass dot
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(400, 300, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    objectCenter = { x: 400, y: 300 };
+                    break;
+                
+                case 'incline':
+                    // Draw incline as a triangle
+                    ctx.fillStyle = '#654321';
+                    ctx.beginPath();
+                    ctx.moveTo(150, 450); // Bottom left
+                    ctx.lineTo(650, 450); // Bottom right
+                    ctx.lineTo(650, 250); // Top right
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Calculate angle of incline
+                    const inclineAngle = Math.atan2(250 - 450, 650 - 150);
+                    
+                    // Position box on incline
+                    const boxX = 400;
+                    // Calculate Y position on the incline at X=400
+                    const slope = (250 - 450) / (650 - 150);
+                    const inclineY = 450 + slope * (boxX - 150);
+                    
+                    ctx.save();
+                    ctx.translate(boxX, inclineY);
+                    ctx.rotate(inclineAngle);
+                    
+                    // Draw box sitting on incline (bottom edge at y=0, which is the incline surface)
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(-40, -80, 80, 80);
+                    ctx.strokeRect(-40, -80, 80, 80);
+                    
+                    // Center of mass dot
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(0, -40, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                    
+                    objectCenter = { x: boxX, y: inclineY - 40 };
+                    break;
+                
+                case 'air':
+                    // Ball
+                    ctx.fillStyle = '#FFA500';
+                    ctx.beginPath();
+                    ctx.arc(400, 300, 40, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    // Center of mass dot
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(400, 300, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    objectCenter = { x: 400, y: 300 };
+                    break;
+                
+                case 'hanging':
+                    // Rope
+                    ctx.beginPath();
+                    ctx.moveTo(400, 100);
+                    ctx.lineTo(400, 250);
+                    ctx.stroke();
+                    // Box
+                    ctx.fillRect(350, 250, 100, 100);
+                    ctx.strokeRect(350, 250, 100, 100);
+                    // Center of mass dot
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(400, 300, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    objectCenter = { x: 400, y: 300 };
+                    break;
+                
+                case 'twoRopes':
+                    // Left rope
+                    ctx.beginPath();
+                    ctx.moveTo(300, 100);
+                    ctx.lineTo(400, 250);
+                    ctx.stroke();
+                    // Right rope
+                    ctx.beginPath();
+                    ctx.moveTo(500, 100);
+                    ctx.lineTo(400, 250);
+                    ctx.stroke();
+                    // Box
+                    ctx.fillRect(350, 250, 100, 100);
+                    ctx.strokeRect(350, 250, 100, 100);
+                    // Center of mass dot
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(400, 300, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    objectCenter = { x: 400, y: 300 };
+                    break;
+                
+                case 'atwood':
+                    // Ceiling
+                    ctx.fillStyle = '#999';
+                    ctx.fillRect(0, 80, canvas.width, 20);
+                    ctx.strokeRect(0, 80, canvas.width, 20);
+                    
+                    // Pulley
+                    ctx.fillStyle = '#555';
+                    ctx.beginPath();
+                    ctx.arc(400, 100, 30, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Pulley center
+                    ctx.fillStyle = '#333';
+                    ctx.beginPath();
+                    ctx.arc(400, 100, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    
+                    // Left rope
+                    ctx.beginPath();
+                    ctx.moveTo(370, 100);
+                    ctx.lineTo(370, 250);
+                    ctx.stroke();
+                    
+                    // Right rope
+                    ctx.beginPath();
+                    ctx.moveTo(430, 100);
+                    ctx.lineTo(430, 350);
+                    ctx.stroke();
+                    
+                    // Box 1 (left, higher) - 50x50
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(345, 250, 50, 50);
+                    ctx.strokeRect(345, 250, 50, 50);
+                    
+                    // Center of mass dot for box 1
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(370, 275, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Box 2 (right, lower) - 50x50
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(405, 350, 50, 50);
+                    ctx.strokeRect(405, 350, 50, 50);
+                    
+                    // Center of mass dot for box 2
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(430, 375, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Labels
+                    ctx.fillStyle = '#000';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText('m₁', 362, 280);
+                    ctx.fillText('m₂', 422, 380);
+                    
+                    objectCenter = { x: 400, y: 300 };
+                    break;
+                
+                case 'modifiedAtwood':
+                    // Table
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(150, 300, 400, 20);
+                    ctx.strokeRect(150, 300, 400, 20);
+                    
+                    // Pulley at right edge of table
+                    ctx.fillStyle = '#555';
+                    ctx.beginPath();
+                    ctx.arc(550, 300, 25, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Pulley center
+                    ctx.fillStyle = '#333';
+                    ctx.beginPath();
+                    ctx.arc(550, 300, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    
+                    // Rope on table (horizontal) - extended to reach pulley
+                    ctx.beginPath();
+                    ctx.moveTo(400, 275);
+                    ctx.lineTo(550, 275);
+                    ctx.stroke();
+                    
+                    // Rope hanging down (vertical)
+                    ctx.beginPath();
+                    ctx.moveTo(550, 325);
+                    ctx.lineTo(550, 425);
+                    ctx.stroke();
+                    
+                    // Box 1 on table (m₁) - 50x50
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(350, 250, 50, 50);
+                    ctx.strokeRect(350, 250, 50, 50);
+                    
+                    // Center of mass dot for box 1
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(375, 275, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Box 2 hanging (m₂) - 50x50
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(525, 425, 50, 50);
+                    ctx.strokeRect(525, 425, 50, 50);
+                    
+                    // Center of mass dot for box 2
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(550, 450, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Labels
+                    ctx.fillStyle = '#000';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText('m₁', 367, 280);
+                    ctx.fillText('m₂', 542, 455);
+                    
+                    objectCenter = { x: 400, y: 300 };
+                    break;
+                
+                case 'modifiedAtwoodIncline':
+                    // Draw incline as a triangle (left apex style)
+                    ctx.fillStyle = '#654321';
+                    ctx.beginPath();
+                    ctx.moveTo(150, 250); // Top left (apex)
+                    ctx.lineTo(550, 450); // Bottom right
+                    ctx.lineTo(150, 450); // Bottom left
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Calculate angle of incline
+                    const inclineAngle2 = Math.atan2(450 - 250, 550 - 150);
+                    
+                    // Position box on incline (m₁)
+                    const boxX2 = 320;
+                    const slope2 = (450 - 250) / (550 - 150);
+                    const inclineY2 = 250 + slope2 * (boxX2 - 150);
+                    
+                    // Draw m₁ on incline
+                    ctx.save();
+                    ctx.translate(boxX2, inclineY2);
+                    ctx.rotate(inclineAngle2);
+                    
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(-25, -50, 50, 50);
+                    ctx.strokeRect(-25, -50, 50, 50);
+                    
+                    // Center of mass dot for m₁
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(0, -25, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Label m₁
+                    ctx.fillStyle = '#000';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText('m₁', -8, -18);
+                    
+                    ctx.restore();
+                    
+                    // Calculate rope attachment point at the midpoint/center of m₁
+                    const cosAngle = Math.cos(inclineAngle2);
+                    const sinAngle = Math.sin(inclineAngle2);
+                    // Center of box in local coords is at (0, -25)
+                    const ropeAttachX = boxX2 + (0 * cosAngle - (-25) * sinAngle);
+                    const ropeAttachY = inclineY2 + (0 * sinAngle + (-25) * cosAngle);
+                    
+                    // Pulley attachment one graph box (20px) above the center
+                    const pulleyAttachX = 150 + 25; // Right edge of pulley
+                    const pulleyAttachY = 250 - 20; // One grid box higher
+                    
+                    // Rope from m₁ to pulley
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(ropeAttachX, ropeAttachY);
+                    ctx.lineTo(pulleyAttachX, pulleyAttachY);
+                    ctx.stroke();
+                    
+                    // Calculate pulley radius needed to touch the rope at the attachment point
+                    const dx = pulleyAttachX - 150;
+                    const dy = pulleyAttachY - 250;
+                    const pulleyRadius = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Pulley at apex
+                    ctx.fillStyle = '#555';
+                    ctx.beginPath();
+                    ctx.arc(150, 250, pulleyRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Pulley center
+                    ctx.fillStyle = '#333';
+                    ctx.beginPath();
+                    ctx.arc(150, 250, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    
+                    // Box 2 position - right edge is 0.5 boxes left of pulley center
+                    const m2RightEdge = 150 - 10;
+                    const m2LeftEdge = m2RightEdge - 50;
+                    
+                    // Rope attachment: one graph box (20px) to the left of the right edge
+                    const m2X = m2RightEdge - 20;
+                    
+                    // Mass 2 moved up 2 graph boxes (40px)
+                    const m2TopY = 400 - 40;
+                    
+                    // String shortened by 2 boxes from bottom (40px shorter)
+                    const stringBottomY = m2TopY + 40;
+                    
+                    // Calculate where vertical line intersects bottom of pulley
+                    const horizontalDist = m2X - 150; // Distance from pulley center
+                    const verticalDistFromCenter = Math.sqrt(pulleyRadius * pulleyRadius - horizontalDist * horizontalDist);
+                    const pulleyBottomY = 250 + verticalDistFromCenter;
+                    
+                    // Rope from pulley edge hanging down vertically to m₂
+                    ctx.beginPath();
+                    ctx.moveTo(m2X, pulleyBottomY);
+                    ctx.lineTo(m2X, stringBottomY);
+                    ctx.stroke();
+                    
+                    // Box 2 hanging (m₂) - 50x50, moved up 2 graph boxes
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(m2LeftEdge, m2TopY, 50, 50);
+                    ctx.strokeRect(m2LeftEdge, m2TopY, 50, 50);
+                    
+                    // Center of mass dot for box 2 (at center of box)
+                    ctx.fillStyle = '#FF0000';
+                    ctx.beginPath();
+                    ctx.arc(m2LeftEdge + 25, m2TopY + 25, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Label m₂ (at center of box)
+                    ctx.fillStyle = '#000';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText('m₂', m2LeftEdge + 17, m2TopY + 30);
+                    
+                    objectCenter = { x: 400, y: 300 };
+                    break;
+            }
+        }
+
+        function drawArrow(fromX, fromY, toX, toY, color, label, showAngle = false) {
+            const headlen = 15;
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            const angle = Math.atan2(dy, dx);
+            
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = 3;
+            
+            // Arrow line
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            ctx.lineTo(toX, toY);
+            ctx.stroke();
+            
+            // Arrow head
+            ctx.beginPath();
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+            
+            // Label
+            if (label) {
+                ctx.font = 'bold 16px Arial';
+                ctx.fillText(label, toX + 10, toY - 10);
+            }
+            
+            // Show angle with horizontal if requested
+            if (showAngle) {
+                const angleWithHorizontal = Math.atan2(-dy, dx) * 180 / Math.PI; // Negative dy because canvas y increases downward
+                const angleDeg = ((angleWithHorizontal % 360) + 360) % 360; // Normalize to 0-360
+                ctx.font = '12px Arial';
+                ctx.fillStyle = color;
+                ctx.fillText(`${angleDeg.toFixed(1)}°`, fromX + dx/2 - 25, fromY + dy/2 - 10);
+            }
+        }
+
+        function drawComponents(force) {
+            const dx = force.endX - force.startX;
+            const dy = force.endY - force.startY;
+            
+            ctx.setLineDash([5, 5]);
+            
+            // X component arrow
+            if (Math.abs(dx) > 5) {
+                drawArrow(force.startX, force.startY, force.startX + dx, force.startY, force.color);
+            }
+            
+            // Y component arrow
+            if (Math.abs(dy) > 5) {
+                drawArrow(force.startX + dx, force.startY, force.endX, force.endY, force.color);
+            }
+            
+            ctx.setLineDash([]);
+            
+            // Labels
+            ctx.font = '14px Arial';
+            ctx.fillStyle = force.color;
+            const label = force.label || 'F';
+            if (Math.abs(dx) > 5) {
+                ctx.fillText(label + 'x', force.startX + dx/2, force.startY - 5);
+            }
+            if (Math.abs(dy) > 5) {
+                ctx.fillText(label + 'y', force.startX + dx + 5, force.startY + dy/2);
+            }
+        }
+
+        function redraw() {
+            drawScenario(scenarioSelect.value);
+            
+            forces.forEach(force => {
+                drawArrow(force.startX, force.startY, force.endX, force.endY, force.color, force.label, force.showAngle);
+                
+                if (force.showComponents && force.label) {
+                    drawComponents(force);
+                }
+                
+                // Draw draggable handles
+                ctx.fillStyle = force.color;
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                
+                // Start handle
+                ctx.beginPath();
+                ctx.arc(force.startX, force.startY, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                
+                // End handle
+                ctx.beginPath();
+                ctx.arc(force.endX, force.endY, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            });
+        }
+
+        function updateForceList() {
+            const forceList = document.getElementById('forceList');
+            if (forces.length === 0) {
+                forceList.innerHTML = '<p style="color: #888;">No forces drawn yet</p>';
+                return;
+            }
+            
+            forceList.innerHTML = '<strong>Forces:</strong>';
+            forces.forEach((force, index) => {
+                const div = document.createElement('div');
+                div.className = 'force-item';
+                
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = force.color;
+                colorInput.onchange = (e) => {
+                    force.color = e.target.value;
+                    redraw();
+                };
+                
+                const select = document.createElement('select');
+                select.innerHTML = '<option value="">Select Label...</option>';
+                forceLabels.forEach(label => {
+                    const option = document.createElement('option');
+                    option.value = label;
+                    option.textContent = label;
+                    if (force.label === label) option.selected = true;
+                    select.appendChild(option);
+                });
+                select.onchange = (e) => {
+                    force.label = e.target.value;
+                    redraw();
+                };
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = force.showComponents || false;
+                checkbox.onchange = (e) => {
+                    force.showComponents = e.target.checked;
+                    redraw();
+                };
+                
+                const checkboxLabel = document.createElement('label');
+                checkboxLabel.textContent = 'Components';
+                checkboxLabel.style.fontWeight = 'normal';
+                checkboxLabel.style.fontSize = '12px';
+                
+                const angleCheckbox = document.createElement('input');
+                angleCheckbox.type = 'checkbox';
+                angleCheckbox.checked = force.showAngle || false;
+                angleCheckbox.onchange = (e) => {
+                    force.showAngle = e.target.checked;
+                    redraw();
+                };
+                
+                const angleLabel = document.createElement('label');
+                angleLabel.textContent = 'Angle';
+                angleLabel.style.fontWeight = 'normal';
+                angleLabel.style.fontSize = '12px';
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.className = 'danger';
+                deleteBtn.onclick = () => {
+                    forces.splice(index, 1);
+                    updateForceList();
+                    redraw();
+                };
+                
+                div.appendChild(colorInput);
+                div.appendChild(document.createTextNode(`Force ${index + 1}: `));
+                div.appendChild(select);
+                div.appendChild(checkbox);
+                div.appendChild(checkboxLabel);
+                div.appendChild(angleCheckbox);
+                div.appendChild(angleLabel);
+                div.appendChild(deleteBtn);
+                forceList.appendChild(div);
+            });
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            // Ignore right-click
+            if (e.button !== 0) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Check if clicking on an existing force handle
+            for (let i = forces.length - 1; i >= 0; i--) {
+                const force = forces[i];
+                const distToStart = Math.sqrt((x - force.startX) ** 2 + (y - force.startY) ** 2);
+                const distToEnd = Math.sqrt((x - force.endX) ** 2 + (y - force.endY) ** 2);
+                
+                if (distToStart < 10) {
+                    isDragging = true;
+                    draggedForce = force;
+                    dragPoint = 'start';
+                    return;
+                } else if (distToEnd < 10) {
+                    isDragging = true;
+                    draggedForce = force;
+                    dragPoint = 'end';
+                    return;
+                }
+            }
+            
+            // If not dragging, start drawing new force
+            isDrawing = true;
+            currentForce = {
+                startX: x,
+                startY: y,
+                endX: x,
+                endY: y,
+                color: colors[forces.length % colors.length],
+                label: '',
+                showComponents: false,
+                showAngle: false
+            };
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            if (isDragging && draggedForce) {
+                if (dragPoint === 'start') {
+                    draggedForce.startX = x;
+                    draggedForce.startY = y;
+                } else {
+                    draggedForce.endX = x;
+                    draggedForce.endY = y;
+                }
+                redraw();
+            } else if (isDrawing && currentForce) {
+                currentForce.endX = x;
+                currentForce.endY = y;
+                
+                redraw();
+                drawArrow(currentForce.startX, currentForce.startY, currentForce.endX, currentForce.endY, currentForce.color);
+            } else {
+                // Change cursor when hovering over handles
+                let overHandle = false;
+                for (let force of forces) {
+                    const distToStart = Math.sqrt((x - force.startX) ** 2 + (y - force.startY) ** 2);
+                    const distToEnd = Math.sqrt((x - force.endX) ** 2 + (y - force.endY) ** 2);
+                    
+                    if (distToStart < 10 || distToEnd < 10) {
+                        overHandle = true;
+                        break;
+                    }
+                }
+                canvas.style.cursor = overHandle ? 'pointer' : 'crosshair';
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                draggedForce = null;
+                dragPoint = null;
+            } else if (isDrawing && currentForce) {
+                forces.push(currentForce);
+                updateForceList();
+                isDrawing = false;
+                currentForce = null;
+                redraw();
+            }
+        });
+
+        scenarioSelect.addEventListener('change', () => {
+            forces = [];
+            updateForceList();
+            redraw();
+        });
+
+        function clearCanvas() {
+            forces = [];
+            updateForceList();
+            redraw();
+        }
+
+        // Initial draw
+        redraw();
+        updateForceList();
+    </script>
+</body>
+</html>
